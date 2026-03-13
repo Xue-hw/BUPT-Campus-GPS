@@ -321,8 +321,8 @@ if __name__ == "__main__":
     nav = CampusNavigationSystem()
     
     # 假设你要从南门去校医院（如果校医院在CSV中有对应的门节点，会自动寻路到最近的门）
-    START_NAME = "南门"
-    END_NAME = "校医院"
+    START_NAME = None
+    END_NAME = None
 
     print(f"=== 请输入起点和目的地 ===")
     START_NAME = input("请输入起点名称：")
