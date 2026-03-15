@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>BUPT 校园导航系统 (Web高级版)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 380px; background: #f8f9fa; padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); overflow-y: auto; z-index: 10; flex-shrink: 0; }
+        #map-container { flex-grow: 1; position: relative; overflow: hidden; background: #e9ecef; cursor: grab; }
+        #map-container:active { cursor: grabbing; }
+        canvas { position: absolute; top: 0; left: 0; }
+        h2 { font-size: 1.1rem; color: #333; margin-top: 0; border-left: 4px solid #007bff; padding-left: 8px; }
+        .section { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #dee2e6; }
+        label { display: block; font-size: 0.85rem; margin-bottom: 5px; color: #555; font-weight: bold; }
+        input[type="file"], input[type="text"], select, button { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 0.9rem; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        button:hover { background: #0056b3; }
+        
+        /* 联想输入框样式 */
+        .autocomplete-container { position: relative; }
+        .autocomplete-list { position: absolute; z-index: 99; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; max-height: 150px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none; }
+        .autocomplete-list div { padding: 8px; cursor: pointer; border-bottom: 1px solid #f1f1f1; font-size: 0.9rem; }
+        .autocomplete-list div:hover { background-color: #e9ecef; }
+        
+        #doorSelectContainer { display: none; background: #eef2f5; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
+        #output { font-size: 0.85rem; background: #fff; padding: 10px; border: 1px solid #ccc; border-radius: 4px; min-height: 80px; white-space: pre-wrap; color: #333; }
+        
+        /* 悬浮控制按钮 */
+        .map-controls { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 5px; z-index: 20; }
+        .map-controls button { width: 40px; height: 40px; border-radius: 50%; font-size: 1.2rem; padding: 0; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>📁 数据加载</h2>
+    <div class="section">
+        <label>1. 地图 (map.jpg)</label><input type="file" id="mapUpload" accept="image/jpeg, image/png">
+        <label>2. 节点 (campus_nodes.csv)</label><input type="file" id="nodesUpload" accept=".csv">
+        <label>3. 道路 (campus_edges.csv)</label><input type="file" id="edgesUpload" accept=".csv">
+        
+        <div id="refContainer" style="display: none;">
+            <button onclick="document.getElementById('svgUpload').click()" style="background: #17a2b8;">📖 参考 (选择并打开SVG)</button>
+            <input type="file" id="svgUpload" accept=".svg" multiple style="display: none;">
+        </div>
+    </div>
+
+    <h2>🧭 智能导航</h2>
+    <div class="section">
+        <label>起点选择</label>
+        <label style="display: flex; align-items: center; font-weight: normal; font-size: 0.8rem; margin-top: -5px; color: #666;">
+            <input type="checkbox" id="onlyBuildingToggle" checked style="width: auto; margin: 0 5px 0 0;"> 仅显示 Building 类节点
+        </label>
+        
+        <div class="autocomplete-container">
+            <input type="text" id="startInput" placeholder="输入并选择起点建筑..." autocomplete="off">
+            <div id="startList" class="autocomplete-list"></div>
+        </div>
+        
+        <div id="doorSelectContainer">
+            <label style="color:#0056b3;">📍 该建筑有多个入口，请选择：</label>
+            <select id="startDoorSelect"></select>
+        </div>
+
+        <label>终点选择 (默认导航至该建筑任意门)</label>
+        <label style="display: flex; align-items: center; font-weight: normal; font-size: 0.8rem; margin-top: -5px; color: #666;">
+            <input type="checkbox" id="onlyBuildingEndToggle" checked style="width: auto; margin: 0 5px 0 0;"> 仅显示 Building 类节点
+        </label>
+        <div class="autocomplete-container">
+            <input type="text" id="endInput" placeholder="输入并选择终点建筑..." autocomplete="off">
+            <div id="endList" class="autocomplete-list"></div>
+        </div>
+        
+        <button onclick="calculatePath()" style="margin-top: 10px; background: #28a745;">🚀 开始导航</button>
+    </div>
+
+    <h2>🌐 图遍历</h2>
+    <div class="section">
+        <input type="text" id="traverseStart" placeholder="输入遍历起点建筑..." autocomplete="off">
+        <div style="display: flex; gap: 10px;">
+            <button onclick="runTraversal('BFS')" style="background: #6c757d;">广度优先 (BFS)</button>
+            <button onclick="runTraversal('DFS')" style="background: #6c757d;">深度优先 (DFS)</button>
+        </div>
+    </div>
+
+    <h2>🛠️ 地图编辑</h2>
+    <div class="section">
+        <select id="editMode">
+            <option value="view">👀 浏览与拖拽模式 (默认)</option>
+            <option value="add_node">📍 添加节点</option>
+            <option value="add_edge">🔗 添加道路</option>
+            <option value="delete">🗑️ 删除元素</option>
+        </select>
+        <button onclick="exportData()">💾 导出当前最新数据</button>
+    </div>
+
+    <h2>📟 终端输出</h2>
+    <div id="output">等待初始化...</div>
+</div>
+
+<div id="map-container">
+    <canvas id="mapCanvas"></canvas>
+    <div class="map-controls">
+        <button onclick="zoom(1.2)">➕</button>
+        <button onclick="zoom(0.8)">➖</button>
+        <button onclick="resetTransform()">🔄</button>
+    </div>
+</div>
+
+<script>
+    // --- 核心数据结构 ---
+    let nodes = {}; 
+    let edges = []; 
+    let adjList = {}; 
+    let maxNodeId = 0;
+    
+    let buildingNames = new Set();
+    let buildingOnlyNames = new Set(); // 新增：专门保存 Building 类型的名称
+    let nodesLoaded = false; // 新增：状态标记
+    let edgesLoaded = false;
+
+    // --- Canvas 与 视口变换变量 ---
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('map-container');
+    let mapImage = new Image();
+    
+    let transform = { scale: 1, x: 0, y: 0 };
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    let hasMoved = false; 
+
+    let selectedNodeForEdge = null;
+    let currentPath = [];
+    let traversalNodes = []; // 新增：保存遍历的节点序列
+
+    // --- 窗口适配 ---
+    function resizeCanvas() {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+        redraw();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // --- 1. 数据解析 ---
+    function checkShowRef() {
+        if (nodesLoaded && edgesLoaded) {
+            document.getElementById('refContainer').style.display = 'block';
+        }
+    }
+
+    // 新增：打开SVG文件
+    document.getElementById('svgUpload').addEventListener('change', e => {
+        Array.from(e.target.files).forEach(file => {
+            if (file.type === "image/svg+xml" || file.name.endsWith('.svg')) {
+                window.open(URL.createObjectURL(file), '_blank');
+            }
+        });
+        e.target.value = ''; // 允许重复选择同名文件
+    });
+
+    document.getElementById('mapUpload').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = event => {
+            mapImage.src = event.target.result;
+            mapImage.onload = () => {
+                resizeCanvas();
+                resetTransform(); 
+                log("底图加载成功。");
+            }
+        };
+        reader.readAsDataURL(file);
+    });
+
+    function parseCSV(text) {
+        const lines = text.split('\n');
+        return lines.slice(1).filter(l => l.trim()).map(line => line.split(','));
+    }
+
+    document.getElementById('nodesUpload').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = event => {
+            nodes = {};
+            buildingNames.clear();
+            buildingOnlyNames.clear(); // 清空
+
+            parseCSV(event.target.result).forEach(cols => {
+                const id = parseInt(cols[0]);
+                const type = cols[2].trim();
+                const name = cols[1].trim();
+                const parent = cols[7] ? cols[7].trim() : '';
+                
+                nodes[id] = {
+                    Node_ID: id, Name: name, Type: type,
+                    X: parseFloat(cols[3]), Y: parseFloat(cols[4]),
+                    PX: parseFloat(cols[5]), PY: parseFloat(cols[6]),
+                    Parent: parent
+                };
+                if (id > maxNodeId) maxNodeId = id;
+                
+                if (type === 'Building' || type === 'Intersection') {
+                    if (name && !name.includes("未命名")) buildingNames.add(name);
+                    if (type === 'Building' && name && !name.includes("未命名")) buildingOnlyNames.add(name);
+                } else if (type === 'Door' && parent) {
+                    buildingNames.add(parent);
+                }
+            });
+            buildAdjList();
+            nodesLoaded = true;
+            checkShowRef();
+            redraw();
+            log(`加载了 ${Object.keys(nodes).length} 个节点数据。`);
+        };
+        reader.readAsText(file);
+    });
+
+    document.getElementById('edgesUpload').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = event => {
+            edges = [];
+            parseCSV(event.target.result).forEach(cols => {
+                edges.push({ u: parseInt(cols[0]), v: parseInt(cols[1]), distance: parseFloat(cols[2]) });
+            });
+            buildAdjList();
+            edgesLoaded = true;
+            checkShowRef();
+            redraw();
+            log(`加载了 ${edges.length} 条拓扑边。`);
+        };
+        reader.readAsText(file);
+    });
+
+    function buildAdjList() {
+        adjList = {};
+        for (let key in nodes) adjList[key] = {};
+        edges.forEach(e => {
+            if(adjList[e.u] && adjList[e.v]) {
+                adjList[e.u][e.v] = e.distance;
+                adjList[e.v][e.u] = e.distance;
+            }
+        });
+    }
+
+    // --- 2. 坐标系与绘图 ---
+    function resetTransform() {
+        if (!mapImage.src) return;
+        const scaleX = canvas.width / mapImage.width;
+        const scaleY = canvas.height / mapImage.height;
+        transform.scale = Math.min(scaleX, scaleY) * 0.95; 
+        transform.x = (canvas.width - mapImage.width * transform.scale) / 2;
+        transform.y = (canvas.height - mapImage.height * transform.scale) / 2;
+        redraw();
+    }
+
+    function zoom(factor) {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const newScale = Math.max(0.05, Math.min(transform.scale * factor, 5));
+        transform.x = centerX - (centerX - transform.x) * (newScale / transform.scale);
+        transform.y = centerY - (centerY - transform.y) * (newScale / transform.scale);
+        transform.scale = newScale;
+        redraw();
+    }
+
+    function screenToWorld(sx, sy) {
+        return { x: (sx - transform.x) / transform.scale, y: (sy - transform.y) / transform.scale };
+    }
+
+    function redraw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.save();
+        ctx.translate(transform.x, transform.y);
+        ctx.scale(transform.scale, transform.scale);
+
+        if (mapImage.src) {
+            ctx.drawImage(mapImage, 0, 0);
+        }
+
+        // 绘制边
+        ctx.lineWidth = 2 / transform.scale; 
+        edges.forEach(edge => {
+            const n1 = nodes[edge.u];
+            const n2 = nodes[edge.v];
+            if (n1 && n2) {
+                ctx.beginPath();
+                ctx.moveTo(n1.PX, n1.PY);
+                ctx.lineTo(n2.PX, n2.PY);
+                ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
+                ctx.stroke();
+            }
+        });
+
+        // 绘制节点
+        const radius = Math.max(2, 4 / transform.scale); 
+        for (let id in nodes) {
+            const n = nodes[id];
+            ctx.beginPath();
+            ctx.arc(n.PX, n.PY, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = n.Type === 'Building' ? '#dc3545' : (n.Type === 'Door' ? '#28a745' : '#007bff');
+            ctx.fill();
+            ctx.lineWidth = 1 / transform.scale;
+            ctx.strokeStyle = 'white';
+            ctx.stroke();
+        }
+
+        // 绘制遍历高亮
+        if (traversalNodes.length > 0) {
+            traversalNodes.forEach(id => {
+                const n = nodes[id];
+                ctx.beginPath();
+                ctx.arc(n.PX, n.PY, radius * 2, 0, 2 * Math.PI);
+                ctx.fillStyle = "rgba(255, 165, 0, 0.6)"; 
+                ctx.fill();
+            });
+        }
+
+        // 修改：绘制路径高亮 (变更颜色和粗细)
+        if (currentPath.length > 1) {
+            ctx.beginPath();
+            for (let i = 0; i < currentPath.length; i++) {
+                const n = nodes[currentPath[i]];
+                if (i === 0) ctx.moveTo(n.PX, n.PY);
+                else ctx.lineTo(n.PX, n.PY);
+            }
+            ctx.strokeStyle = "#FF0000"; // 更高亮的红色
+            ctx.lineWidth = 3 / transform.scale; // 变细
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            
+            // 新增：起终点高亮标注并在地图上显示名称
+            const startNode = nodes[currentPath[0]];
+            const endNode = nodes[currentPath[currentPath.length - 1]];
+            
+            ctx.font = `bold ${14 / transform.scale}px Arial`;
+            
+            // 标注起点
+            ctx.beginPath();
+            ctx.arc(startNode.PX, startNode.PY, 7 / transform.scale, 0, 2 * Math.PI);
+            ctx.fillStyle = "#ffc107"; // 警告黄高亮
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = "black";
+            ctx.fillText("起: " + startNode.Name, startNode.PX + 10 / transform.scale, startNode.PY - 10 / transform.scale);
+
+            // 标注终点
+            ctx.beginPath();
+            ctx.arc(endNode.PX, endNode.PY, 7 / transform.scale, 0, 2 * Math.PI);
+            ctx.fillStyle = "#ffc107";
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = "black";
+            ctx.fillText("终: " + endNode.Name, endNode.PX + 10 / transform.scale, endNode.PY - 10 / transform.scale);
+        }
+
+        ctx.restore();
+    }
+
+    // --- 3. 鼠标交互事件 (拖拽与编辑) ---
+    container.addEventListener('mousedown', e => {
+        isDragging = true;
+        hasMoved = false;
+        dragStart = { x: e.clientX - transform.x, y: e.clientY - transform.y };
+    });
+
+    container.addEventListener('mousemove', e => {
+        if (!isDragging) return;
+        transform.x = e.clientX - dragStart.x;
+        transform.y = e.clientY - dragStart.y;
+        hasMoved = true;
+        redraw();
+    });
+
+    window.addEventListener('mouseup', () => { isDragging = false; });
+
+    container.addEventListener('wheel', e => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+        const newScale = Math.max(0.05, Math.min(transform.scale * zoomFactor, 5));
+        
+        transform.x = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
+        transform.y = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
+        transform.scale = newScale;
+        redraw();
+    }, { passive: false });
+
+    canvas.addEventListener('click', e => {
+        if (hasMoved) return; 
+        const mode = document.getElementById('editMode').value;
+        if (mode === 'view') return;
+
+        const rect = canvas.getBoundingClientRect();
+        const worldPos = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        const wx = worldPos.x;
+        const wy = worldPos.y;
+
+        if (mode === 'add_node') {
+            const name = prompt("请输入节点名称:");
+            if (!name) return;
+            maxNodeId++;
+            nodes[maxNodeId] = {
+                Node_ID: maxNodeId, Name: name, Type: "Intersection",
+                X: wx, Y: wy, PX: wx, PY: wy, Parent: name
+            };
+            buildAdjList();
+            redraw();
+            log(`📍 已在坐标 (${wx.toFixed(1)}, ${wy.toFixed(1)}) 添加节点: ${name}`);
+        } 
+        else if (mode === 'add_edge' || mode === 'delete') {
+            let clickedId = null;
+            let minDist = 15 / transform.scale; 
+            for (let id in nodes) {
+                const dist = Math.hypot(nodes[id].PX - wx, nodes[id].PY - wy);
+                if (dist < minDist) { minDist = dist; clickedId = id; }
+            }
+
+            if (mode === 'add_edge' && clickedId) {
+                if (!selectedNodeForEdge) {
+                    selectedNodeForEdge = clickedId;
+                    log(`已选择起点 ID: ${clickedId}，请点击另一个节点完成连线。`);
+                } else if (selectedNodeForEdge !== clickedId) {
+                    const n1 = nodes[selectedNodeForEdge];
+                    const n2 = nodes[clickedId];
+                    const dist = Math.hypot(n1.PX - n2.PX, n1.PY - n2.PY) * 0.5; 
+                    edges.push({ u: parseInt(selectedNodeForEdge), v: parseInt(clickedId), distance: dist });
+                    buildAdjList();
+                    log(`🔗 成功连线 ${n1.Name} 与 ${n2.Name}`);
+                    selectedNodeForEdge = null;
+                }
+                redraw();
+            } else if (mode === 'delete' && clickedId) {
+                delete nodes[clickedId];
+                edges = edges.filter(e => e.u != clickedId && e.v != clickedId);
+                buildAdjList();
+                redraw();
+                log(`🗑️ 已删除节点及其关联道路。`);
+            }
+        }
+    });
+
+    // --- 4. 联想输入与门选择逻辑 ---
+    function setupAutocomplete(inputId, listId, isStart) {
+        const input = document.getElementById(inputId);
+        const list = document.getElementById(listId);
+        
+        input.addEventListener('input', function() {
+            const val = this.value.trim();
+            list.innerHTML = '';
+            if (!val) { list.style.display = 'none'; return; }
+            
+            // --- 修改部分开始 ---
+            // 根据是起点还是终点，决定读取哪个勾选框的状态
+            const toggleId = isStart ? 'onlyBuildingToggle' : 'onlyBuildingEndToggle';
+            const isFilterOn = document.getElementById(toggleId).checked;
+            
+            let sourceData = isFilterOn ? buildingOnlyNames : buildingNames;
+            // --- 修改部分结束 ---
+
+            let matches = Array.from(sourceData).filter(name => name.includes(val));
+            if (matches.length > 0) {
+                matches.forEach(match => {
+                    const div = document.createElement('div');
+                    div.innerText = match;
+                    div.onclick = () => {
+                        input.value = match;
+                        list.style.display = 'none';
+                        if (isStart) handleStartSelection(match);
+                    };
+                    list.appendChild(div);
+                });
+                list.style.display = 'block';
+            } else {
+                list.style.display = 'none';
+            }
+        });
+
+        document.addEventListener('click', e => {
+            if (e.target !== input && e.target !== list) list.style.display = 'none';
+        });
+    }
+
+    setupAutocomplete('startInput', 'startList', true);
+    setupAutocomplete('endInput', 'endList', false);
+
+    // 重新输入起点时重新触发门匹配
+    document.getElementById('onlyBuildingToggle').addEventListener('change', () => {
+        document.getElementById('startInput').value = '';
+        document.getElementById('doorSelectContainer').style.display = 'none';
+    });
+
+    function handleStartSelection(buildingName) {
+        const doorContainer = document.getElementById('doorSelectContainer');
+        const doorSelect = document.getElementById('startDoorSelect');
+        doorSelect.innerHTML = '';
+        
+        let doors = [];
+        for (let id in nodes) {
+            if (nodes[id].Type === 'Door' && nodes[id].Parent === buildingName) {
+                doors.push({ id: id, name: nodes[id].Name });
+            }
+        }
+
+        if (doors.length > 0) {
+            doorContainer.style.display = 'block';
+            doorSelect.options.add(new Option("🚪 任意门 (算法自动寻找最优起点)", "any"));
+            doors.forEach(door => {
+                doorSelect.options.add(new Option(door.name, door.id));
+            });
+        } else {
+            doorContainer.style.display = 'none';
+        }
+    }
+
+    // --- 5. 寻路核心逻辑 ---
+    function getTargetIds(name) {
+        let doorIds = [];
+        let buildingId = null;
+        for (let id in nodes) {
+            if (nodes[id].Parent === name && nodes[id].Type === 'Door') {
+                doorIds.push(parseInt(id));
+            }
+            if (nodes[id].Name === name && (nodes[id].Type === 'Building' || nodes[id].Type === 'Intersection')) {
+                buildingId = parseInt(id);
+            }
+        }
+        return doorIds.length > 0 ? doorIds : (buildingId ? [buildingId] : []);
+    }
+
+    function calculatePath() {
+        traversalNodes = []; // 清空遍历高亮
+        const startName = document.getElementById('startInput').value.trim();
+        const endName = document.getElementById('endInput').value.trim();
+        if (!startName || !endName) return log("⚠️ 请确保起点和终点已输入。");
+
+        let startIds = [];
+        const doorSelect = document.getElementById('startDoorSelect');
+        const doorContainer = document.getElementById('doorSelectContainer');
+        
+        if (doorContainer.style.display === 'block' && doorSelect.value !== 'any') {
+            startIds = [parseInt(doorSelect.value)];
+        } else {
+            startIds = getTargetIds(startName);
+        }
+
+        let endIds = getTargetIds(endName);
+
+        if (startIds.length === 0 || endIds.length === 0) {
+            return log("❌ 在图谱中未解析到起点或终点坐标，请检查名称。");
+        }
+
+        let bestPath = null;
+        let minGlobalDist = Infinity;
+
+        startIds.forEach(startId => {
+            let distances = {};
+            let prev = {};
+            let unvisited = new Set(Object.keys(nodes).map(Number));
+
+            for (let node in nodes) distances[node] = Infinity;
+            distances[startId] = 0;
+
+            while (unvisited.size > 0) {
+                let currNode = null;
+                let minDist = Infinity;
+                for (let node of unvisited) {
+                    if (distances[node] < minDist) {
+                        minDist = distances[node];
+                        currNode = node;
+                    }
+                }
+                if (currNode === null || minDist === Infinity) break;
+                unvisited.delete(currNode);
+
+                for (let neighbor in adjList[currNode]) {
+                    let alt = distances[currNode] + adjList[currNode][neighbor];
+                    if (alt < distances[neighbor]) {
+                        distances[neighbor] = alt;
+                        prev[neighbor] = currNode;
+                    }
+                }
+            }
+
+            endIds.forEach(endId => {
+                if (distances[endId] < minGlobalDist) {
+                    minGlobalDist = distances[endId];
+                    let path = [];
+                    let u = endId;
+                    while (u !== undefined) {
+                        path.unshift(u);
+                        u = prev[u];
+                    }
+                    if (path[0] === startId) bestPath = path;
+                }
+            });
+        });
+
+        if (bestPath) {
+            currentPath = bestPath;
+            redraw();
+            const startNodeName = nodes[bestPath[0]].Name;
+            const endNodeName = nodes[bestPath[bestPath.length - 1]].Name;
+            
+            const routeNames = bestPath
+                .map(id => nodes[id].Name)
+                .filter(name => name && !name.includes("未命名") && !name.includes("交叉"));
+                
+            log(`✅ 导航规划成功！\n📍 实际计算起点: ${startNodeName}\n🎯 实际到达目标: ${endNodeName}\n📏 预估距离: ${minGlobalDist.toFixed(1)/2} m\n🚶 途径核心节点:\n   ${routeNames.join(' ➔ ')}`);
+        } else {
+            log("❌ 导航失败：该起终点之间不存在连通的路径。");
+        }
+    }
+
+    // 新增：图遍历功能核心逻辑
+    function runTraversal(type) {
+        currentPath = []; // 清空导航路径
+        traversalNodes = [];
+        redraw();
+        
+        const startName = document.getElementById('traverseStart').value.trim();
+        const startIds = getTargetIds(startName);
+        if (startIds.length === 0) return log("❌ 找不到遍历起点，请检查建筑名称。");
+        const startId = startIds[0];
+
+        let visited = new Set();
+        let resultIds = [];
+        let list = [startId];
+        visited.add(startId);
+
+        while (list.length > 0) {
+            let curr = type === 'BFS' ? list.shift() : list.pop(); 
+            resultIds.push(curr);
+            
+            let neighbors = Object.keys(adjList[curr]).map(Number);
+            neighbors.forEach(neighbor => {
+                if (!visited.has(neighbor)) {
+                    visited.add(neighbor);
+                    list.push(neighbor);
+                }
+            });
+        }
+
+        traversalNodes = resultIds;
+        redraw();
+        let names = resultIds.map(id => nodes[id].Name).filter(n => n && !n.includes("未命名")).slice(0, 15);
+        log(`🌐 ${type} 遍历完成 (共扫描 ${resultIds.length} 个节点)。\n前15个到达的命名节点: \n${names.join(' ➔ ')} ...`);
+    }
+
+    function log(msg) { document.getElementById('output').innerText = msg; }
+
+    // --- 数据导出 ---
+    function exportData() {
+        let nodesCsv = "Node_ID,Name,Type,X,Y,PX,PY,Parent\n";
+        for (let id in nodes) {
+            const n = nodes[id];
+            nodesCsv += `${n.Node_ID},${n.Name},${n.Type},${n.X},${n.Y},${n.PX},${n.PY},${n.Parent}\n`;
+        }
+        const blob = new Blob([nodesCsv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "campus_nodes_updated.csv";
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+</script>
+</body>
+</html>
