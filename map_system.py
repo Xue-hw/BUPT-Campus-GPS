@@ -160,6 +160,27 @@ class CampusNavigationSystem:
                     if neighbor not in visited:
                         queue.append(neighbor)
         return traversal_order
+    
+    def traverse_campus_dfs(self, start_id):
+        """深度优先遍历 (DFS) 校园建筑"""
+        if start_id not in self.graph:
+            return []
+
+        visited = set()
+        stack = [start_id]
+        traversal_order = []
+
+        while stack:
+            node = stack.pop()
+            if node not in visited:
+                visited.add(node)
+                traversal_order.append(node)
+                # 将未访问的邻居加入栈中
+                # 注意：为了让结果更符合常规直觉，可以对邻居进行排序后再入栈
+                for neighbor in sorted(self.graph[node], reverse=True):
+                    if neighbor not in visited:
+                        stack.append(neighbor)
+        return traversal_order
 
     # ================= 核心要求 4: 输出与可视化 =================
 
@@ -317,34 +338,115 @@ class CampusNavigationSystem:
         return best_path, min_dist
 
 # --- 测试与交互示例 ---
+# --- 测试与交互示例 ---
 if __name__ == "__main__":
     nav = CampusNavigationSystem()
     
-    # 假设你要从南门去校医院（如果校医院在CSV中有对应的门节点，会自动寻路到最近的门）
-    START_NAME = None
-    END_NAME = None
-
-    print(f"=== 请输入起点和目的地 ===")
-    START_NAME = input("请输入起点名称：")
-    END_NAME = input("请输入终点名称：")
-
-    print(f"=== 智能导航：正在计算从【{START_NAME}】到【{END_NAME}】的最短路线 ===")
-    
-    path, dist = nav.navigate_by_name(START_NAME, END_NAME)
-    
-    if path:
-        # 输出起点门和终点门的具体名称
-        actual_start = nav.df_nodes.loc[path[0], 'Name']
-        actual_end = nav.df_nodes.loc[path[-1], 'Name']
-        print(f"📍 实际规划起止点：{actual_start} -> {actual_end}")
+    while True:
+        print("\n" + "="*45)
+        print("🏫 欢迎使用 BUPT 校园导航系统 (控制台版)")
+        print("1. 🗺️ 查询两点间最短路径 (带地图展示)")
+        print("2. 🚶 遍历校园建筑 (广度/深度优先)")
+        print("3. ➕ 添加数据 (建筑节点 / 道路)")
+        print("4. ➖ 删除数据 (建筑节点 / 道路)")
+        print("5. 💾 保存修改并退出系统")
+        print("="*45)
         
-        nav.print_path_description(path, dist/2)
-        nav.draw_path(path)
-    else:
-        print("导航失败。")
+        choice = input("请输入要执行的功能序号 (1-5): ").strip()
+        
+        if choice == '1':
+            print("\n--- 🗺️ 查询最短路径 ---")
+            start_name = input("请输入起点名称 (例如 '南门'): ").strip()
+            end_name = input("请输入终点名称 (例如 '校医院'): ").strip()
+            
+            print(f"正在计算从【{start_name}】到【{end_name}】的最优路线...")
+            path, dist = nav.navigate_by_name(start_name, end_name)
+            
+            if path:
+                actual_start = nav.df_nodes.loc[path[0], 'Name']
+                actual_end = nav.df_nodes.loc[path[-1], 'Name']
+                print(f"📍 实际规划起止点: {actual_start} -> {actual_end}")
+                # 输出文字描述，假设系统默认距离单位已经是米，直接传入 dist 即可
+                nav.print_path_description(path, dist/2) 
+                nav.draw_path(path)
+            else:
+                print("❌ 导航失败，未能找到可行路径或输入的名称有误。")
 
-    # --- 拓展：演示图的遍历 ---
-    # print("\n=== BFS 遍历周边节点（前10个） ===")
-    # bfs_result = nav.traverse_campus_bfs(START_NAME)
-    # for nid in bfs_result[:10]:
-    #     print(f"[{nid}] {nav.df_nodes.loc[nid, 'Name']}")
+        elif choice == '2':
+            print("\n--- 🚶 遍历校园建筑 ---")
+            start_name = input("请输入遍历的起始建筑名称: ").strip()
+            ids = nav.get_node_ids_by_name(start_name)
+            
+            if not ids:
+                print(f"❌ 找不到与 '{start_name}' 相关的节点。")
+                continue
+                
+            start_id = ids[0] # 默认取找到的第一个 ID 作为起点
+            actual_name = nav.df_nodes.loc[start_id, 'Name']
+            
+            mode = input("选择遍历方式 [1] 广度优先(BFS)  [2] 深度优先(DFS): ").strip()
+            if mode == '1':
+                print(f"\n正在从【{actual_name}】开始广度优先遍历 (BFS)...")
+                result = nav.traverse_campus_bfs(start_id)
+            elif mode == '2':
+                print(f"\n正在从【{actual_name}】开始深度优先遍历 (DFS)...")
+                result = nav.traverse_campus_dfs(start_id)
+            else:
+                print("❌ 无效的选择。")
+                continue
+                
+            print("遍历结果 (前 15 个节点):")
+            for i, nid in enumerate(result[:15]):
+                name = nav.df_nodes.loc[nid, 'Name']
+                print(f" {i+1}. [{nid}] {name}")
+
+        elif choice == '3':
+            print("\n--- ➕ 添加数据 ---")
+            sub_choice = input("[1] 添加建筑节点  [2] 添加道路边: ").strip()
+            if sub_choice == '1':
+                try:
+                    nid = int(input("输入新节点 ID (整数): "))
+                    name = input("输入名称: ")
+                    ntype = input("输入类型 (如 Door, Cross, Building): ")
+                    x = int(input("输入 X 坐标: "))
+                    y = int(input("输入 Y 坐标: "))
+                    px = int(input("输入绘图 PX 坐标: "))
+                    py = int(input("输入绘图 PY 坐标: "))
+                    parent = input("输入所属主建筑名称 (无则留空): ")
+                    nav.add_node(nid, name, ntype, x, y, px, py, parent)
+                except ValueError:
+                    print("❌ 输入格式错误，坐标和 ID 必须为数字。")
+            elif sub_choice == '2':
+                try:
+                    u = int(input("输入起点 ID: "))
+                    v = int(input("输入终点 ID: "))
+                    dist = float(input("输入道路距离: "))
+                    nav.add_edge(u, v, dist)
+                except ValueError:
+                    print("❌ 输入格式错误，ID必须为整数，距离必须为数字。")
+
+        elif choice == '4':
+            print("\n--- ➖ 删除数据 ---")
+            sub_choice = input("[1] 删除建筑节点  [2] 删除道路边: ").strip()
+            if sub_choice == '1':
+                try:
+                    nid = int(input("输入要删除的节点 ID: "))
+                    nav.delete_node(nid)
+                except ValueError:
+                    print("❌ ID 必须为数字。")
+            elif sub_choice == '2':
+                try:
+                    u = int(input("输入边的一端节点 ID: "))
+                    v = int(input("输入边的另一端节点 ID: "))
+                    nav.delete_edge(u, v)
+                except ValueError:
+                    print("❌ ID 必须为数字。")
+
+        elif choice == '5':
+            print("\n正在保存数据...")
+            nav.save_data()
+            print("👋 系统已退出。")
+            break
+            
+        else:
+            print("❌ 无效的指令，请输入 1 到 5 之间的数字。")
