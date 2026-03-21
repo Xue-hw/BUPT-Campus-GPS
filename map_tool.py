@@ -1,18 +1,10 @@
-# 由于是手动选择坐标，可能会有误差，请根据实际情况进行调整。
-# 坐标位置以地图左下角为基准，1单位约等于0.5m，请在采集时注意保持一致性。
-# 由于地图经过偏移，无法准确代表真实情况，请以实际环境为准进行调整。
-# 物美与眼镜店简化为单一坐标建筑
-# 小松林、时光广场等位置由于是开放空间，没有明确边界和入口，故未进行采集
-# 家属区建筑在地图上未做命名处理，在程序中难以区分，同时家属区道路情况复杂，故未进行采集
-# 由于时间和空间问题，道路绿化、可踩踏的草坪小径等暂未标注。
-# 后续优化方向：对齐门、路口的位置，尽量做到横平竖直
+
 import matplotlib.pyplot as plt
 from PIL import Image
 import pandas as pd
 import os
 import numpy as np
 
-# --- 1. 环境配置与中文支持 ---
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 设置中文显示
 plt.rcParams['axes.unicode_minus'] = False    # 解决负号显示问题
 
@@ -20,7 +12,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 IMG_PATH = os.path.join(BASE_DIR, 'map.jpg')
 SAVE_PATH = os.path.join(BASE_DIR, 'campus_nodes.csv')
 
-# 比例尺：1像素 = 0.5米
+
 SCALE = 1
 
 # 全局变量定义
@@ -28,31 +20,29 @@ ORIGIN_PX, ORIGIN_PY = None, None
 COLUMNS = ['Node_ID', 'Name', 'Type', 'X', 'Y', 'PX', 'PY', 'Parent']
 plot_elements = {}  # 格式: { Node_ID/ 'ORIGIN': (plot_obj, text_obj) }
 
-# --- 2. 数据加载函数 ---
+# 数据加载函数
 def load_existing_data():
     """从 CSV 加载旧数据，并尝试恢复参考原点"""
     global ORIGIN_PX, ORIGIN_PY
     if os.path.exists(SAVE_PATH):
         try:
             df = pd.read_csv(SAVE_PATH, encoding='utf-8-sig')
-            # 必须检查 PX 列是否存在，避免旧版本格式导致崩溃
             if 'PX' in df.columns and 'PY' in df.columns:
                 print(f"✅ 已成功加载 {len(df)} 个旧节点。")
-                # 默认以 BUPT 经典原点为例，或者你可以根据需求自定义逻辑
-                ORIGIN_PX, ORIGIN_PY = 135,1685 
+                # 默认原点（135, 1685）
+                ORIGIN_PX, ORIGIN_PY = 135, 1685
                 return df
             else:
                 print("⚠️ 发现旧版 CSV 格式不兼容（缺少像素坐标），将重新创建。")
         except Exception as e:
             print(f"读取数据失败: {e}")
     
-    # 返回定义好列名的空 DataFrame，避免 FutureWarning
+    # 返回定义好列名的空 DataFrame
     return pd.DataFrame({c: pd.Series(dtype='object') for c in COLUMNS}).dropna()
 
-# 初始化 DataFrame
 df_nodes = load_existing_data()
 
-# --- 3. 交互逻辑函数 ---
+# --- 交互逻辑函数 ---
 def on_click(event):
     global df_nodes, ORIGIN_PX, ORIGIN_PY
     
@@ -60,7 +50,6 @@ def on_click(event):
     if event.button == 1 and event.xdata is not None and event.ydata is not None:
         px, py = event.xdata, event.ydata
 
-        # --- A. 原点设置逻辑 ---
         # 如果当前没有任何数据且原点未设置，则第一次点击定义为原点
         if df_nodes.empty and ORIGIN_PX is None:
             ORIGIN_PX, ORIGIN_PY = px, py
@@ -71,24 +60,24 @@ def on_click(event):
             plt.draw()
             return 
 
-        # --- B. 检查是否点击了已有点 ---
+        #  检查是否点击了已有点 
         for idx, row in df_nodes.iterrows():
             dist = np.sqrt((px - row['PX'])**2 + (py - row['PY'])**2)
-            if dist < 10: # 10像素为命中范围
+            if dist < 10: # 10像素为命中阈值
                 print(f"\n🔎 选中节点 [ID: {row['Node_ID']}] 名称: {row['Name']}")
                 return
 
-        # --- C. 正常采集逻辑 ---
+        # 正常采集逻辑
         if ORIGIN_PX is None:
-            print("❌ 错误：请先点击地图左下角设置参考原点！")
+            print("❌ 错误：请先设置参考原点！")
             return
 
-        # 换算物理坐标
+        # 坐标转换：像素坐标 -> 实际坐标
         dx = px - ORIGIN_PX
         dy = ORIGIN_PY - py
         real_x, real_y = round(dx * SCALE, 2), round(dy * SCALE, 2)
 
-        print(f"\n--- 拾取新点: X={real_x}m, Y={real_y}m ---")
+        print(f"\n--- 拾取新点: X={real_x}, Y={real_y} ---")
         choice = input("选择类型: 1-建筑, 2-门/入口, 3-路口 (输入 Z 撤销): ").strip().lower()
         
         if choice == 'z':
@@ -190,7 +179,7 @@ if __name__ == "__main__":
         fig.canvas.mpl_connect('key_press_event', undo_last)
 
         print("="*40)
-        print("       BUPT 校园坐标采集工具 (Pandas版)")
+        print("       BUPT 校园坐标采集工具")
         print("="*40)
         print("使用说明:")
         print("1. 若首次运行，请点击地图左下角设为【原点】。")

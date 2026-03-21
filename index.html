@@ -39,10 +39,6 @@
         <label>2. 节点 (campus_nodes.csv)</label><input type="file" id="nodesUpload" accept=".csv">
         <label>3. 道路 (campus_edges.csv)</label><input type="file" id="edgesUpload" accept=".csv">
         
-        <div id="refContainer" style="display: none;">
-            <button onclick="document.getElementById('svgUpload').click()" style="background: #17a2b8;">📖 参考 (选择并打开SVG)</button>
-            <input type="file" id="svgUpload" accept=".svg" multiple style="display: none;">
-        </div>
     </div>
 
     <h2>🧭 智能导航</h2>
@@ -143,21 +139,8 @@
     window.addEventListener('resize', resizeCanvas);
 
     // --- 1. 数据解析 ---
-    function checkShowRef() {
-        if (nodesLoaded && edgesLoaded) {
-            document.getElementById('refContainer').style.display = 'block';
-        }
-    }
 
-    // 新增：打开SVG文件
-    document.getElementById('svgUpload').addEventListener('change', e => {
-        Array.from(e.target.files).forEach(file => {
-            if (file.type === "image/svg+xml" || file.name.endsWith('.svg')) {
-                window.open(URL.createObjectURL(file), '_blank');
-            }
-        });
-        e.target.value = ''; // 允许重复选择同名文件
-    });
+
 
     document.getElementById('mapUpload').addEventListener('change', e => {
         const file = e.target.files[0];
@@ -211,7 +194,7 @@
             });
             buildAdjList();
             nodesLoaded = true;
-            checkShowRef();
+        
             redraw();
             log(`加载了 ${Object.keys(nodes).length} 个节点数据。`);
         };
@@ -229,7 +212,6 @@
             });
             buildAdjList();
             edgesLoaded = true;
-            checkShowRef();
             redraw();
             log(`加载了 ${edges.length} 条拓扑边。`);
         };

@@ -1,10 +1,3 @@
-#穿楼导航和部分地标性建筑暂未实现
-#路网逻辑：
-#对于建筑物之间的连线，考虑直线距离和实际道路，有略作修改（如教四新增了北门）
-#对于有标识入口的建筑物，以导航到其任意入口视为导航到该建筑物；
-#对于没有标识入口的建筑物，以导航到其节点坐标视为导航到该建筑物；
-#路网连线为直线距离且未对齐，存在一定误差，请以实际位置和路线为准
-#当前路网视为无向图，后续可根据实际情况添加单向边（如单行道、禁止左转等）
 
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -12,7 +5,7 @@ import pandas as pd
 import os
 import numpy as np
 
-# --- 1. 配置与颜色定义 ---
+#  配置与颜色定义
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -42,24 +35,25 @@ class EdgeInteractiveTool:
         self.plot_lines = [] 
 
     def get_dist(self, id1, id2):
+        # 计算两个节点之间的直线距离
         n1, n2 = self.df_nodes.loc[id1], self.df_nodes.loc[id2]
         return round(np.sqrt((n1['X'] - n2['X'])**2 + (n1['Y'] - n2['Y'])**2), 2)
 
     def add_edge(self, id1, id2):
+        # 添加边
         id1, id2 = int(id1), int(id2)
         if id1 == id2: return
         
         u, v = min(id1, id2), max(id1, id2)
         
         if not self.df_edges[(self.df_edges['Start_ID'] == u) & (self.df_edges['End_ID'] == v)].empty:
-            print(f"⚠️ 边 {u}-{v} 已存在")
+            print(f"⚠️添加失败: 边 {u}-{v} 已存在")
             return
 
         dist = self.get_dist(u, v)
         new_row = pd.DataFrame([{'Start_ID': u, 'End_ID': v, 'Distance': dist}])
         self.df_edges = pd.concat([self.df_edges, new_row], ignore_index=True)
-        
-        # 绘制黑色连线
+        # 绘制连线
         n1, n2 = self.df_nodes.loc[u], self.df_nodes.loc[v]
         line, = self.ax.plot([n1['PX'], n2['PX']], [n1['PY'], n2['PY']], 'k-', linewidth=1.2, alpha=0.6)
         self.plot_lines.append(line)
@@ -68,12 +62,13 @@ class EdgeInteractiveTool:
         self.save_data()
 
     def on_click(self, event):
+        # 处理鼠标点击事件
         if event.button == 1 and event.xdata is not None:
             # 搜索最近节点
             dists = np.sqrt((self.df_nodes['PX'] - event.xdata)**2 + (self.df_nodes['PY'] - event.ydata)**2)
             nearest_id = dists.idxmin()
             
-            if dists[nearest_id] < 15: # 减小点击半径，防止误触
+            if dists[nearest_id] < 10: # 减小点击半径，防止误触
                 self.selected_nodes.append(nearest_id)
                 node_info = self.df_nodes.loc[nearest_id]
                 print(f"📍 选中: {node_info['Name']} (ID: {nearest_id}, 类型: {node_info['Type']})")

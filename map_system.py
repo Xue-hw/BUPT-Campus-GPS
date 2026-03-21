@@ -47,7 +47,6 @@ class CampusNavigationSystem:
         self.df_edges.to_csv(EDGES_PATH, index=False, encoding='utf-8-sig')
         print("✅ 数据已保存。")
 
-    # ================= 核心要求 1: 图的修改功能 =================
     
     def add_node(self, node_id, name, n_type, x, y, px, py, parent):
         """添加新节点（建筑/路口）"""
@@ -88,7 +87,7 @@ class CampusNavigationSystem:
         self.build_graph()
         print(f"✅ 成功尝试删除边: {u} <--> {v}")
 
-    # ================= 核心要求 2: 最短路径算法 =================
+    #最短路径算法
 
     def shortest_path_dijkstra(self, start_id, end_id):
         """
@@ -139,10 +138,10 @@ class CampusNavigationSystem:
         else:
             return None, float('inf')
 
-    # ================= 核心要求 3: 图的遍历 =================
+    #图的遍历
 
     def traverse_campus_bfs(self, start_id):
-        """广度优先遍历 (BFS) 校园建筑，可用于生成周围建筑推荐"""
+        """广度优先遍历 (BFS) 校园建筑，可用于生成周围建筑"""
         if start_id not in self.graph:
             return []
 
@@ -182,8 +181,7 @@ class CampusNavigationSystem:
                         stack.append(neighbor)
         return traversal_order
 
-    # ================= 核心要求 4: 输出与可视化 =================
-
+    # 输出与可视化
     def print_path_description(self, path, total_dist):
         """输出路径的文字描述"""
         if not path:
@@ -337,8 +335,7 @@ class CampusNavigationSystem:
 
         return best_path, min_dist
 
-# --- 测试与交互示例 ---
-# --- 测试与交互示例 ---
+
 if __name__ == "__main__":
     nav = CampusNavigationSystem()
     
